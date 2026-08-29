@@ -3,12 +3,13 @@
 // Used for the live concurrency demonstration
 
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/db";
 import { apiError, apiSuccess } from "@/lib/utils";
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "ADMIN") {
     return apiError("Admin only", 403);
   }

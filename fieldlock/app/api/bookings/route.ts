@@ -74,10 +74,12 @@ export async function POST(req: NextRequest) {
 
           const rankScore = user
             ? computeAllocationScore({
-                attendanceRate: user.totalBookings > 0 ? user.attendedCount / user.totalBookings : 1.0,
-                totalBookingsThisMonth: user.totalBookings,
-                cancellationsInAdvance: 0,
-                waitlistHonoredCount: 1,
+                totalBookings: user.totalBookings,
+                attendedCount: user.attendedCount,
+                noShowCount: user.noShowCount,
+                earlyCancel: 0,
+                lateCancel: 0,
+                waitlistHonored: 1,
                 isNewUser: user.totalBookings === 0,
               })
             : 50;

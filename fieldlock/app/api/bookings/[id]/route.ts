@@ -6,13 +6,13 @@ import { apiError, apiSuccess, computeAllocationScore } from "@/lib/utils";
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return apiError("Unauthorized", 401);
 
-    const bookingId = params.id;
+    const { id: bookingId } = await params;
 
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
@@ -64,10 +64,12 @@ export async function DELETE(
       const user = await tx.user.findUnique({ where: { id: session.user.id } });
       if (user) {
         const newScore = computeAllocationScore({
-          attendanceRate: user.totalBookings > 0 ? user.attendedCount / user.totalBookings : 1.0,
-          totalBookingsThisMonth: user.totalBookings,
-          cancellationsInAdvance: 1,
-          waitlistHonoredCount: 0,
+          totalBookings: user.totalBookings,
+          attendedCount: user.attendedCount,
+          noShowCount: user.noShowCount,
+          earlyCancel: 1,
+          lateCancel: 0,
+          waitlistHonored: 0,
           isNewUser: false,
         });
 
