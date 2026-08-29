@@ -13,41 +13,56 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: "credentials",
       credentials: {
-        email: { label: "Email", type: "text" },
+        email: { label: "Email / Roll Number", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const input = (credentials.email as string).trim();
+        try {
+          const rawInput = (credentials.email as string).trim();
+          const lowerInput = rawInput.toLowerCase();
+          const upperInput = rawInput.toUpperCase();
 
-        // Search by email, rollNumber, or email prefix
-        const user = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { email: input },
-              { rollNumber: input },
-              { email: `${input}@iitg.ac.in` },
-            ],
-          },
-        });
+          // Search by email, roll number (e.g. 220101001 or ADMIN001), or roll email
+          const user = await prisma.user.findFirst({
+            where: {
+              OR: [
+                { email: lowerInput },
+                { rollNumber: upperInput },
+                { rollNumber: rawInput },
+                { email: `${lowerInput}@iitg.ac.in` },
+              ],
+            },
+          });
 
-        if (!user || !user.isActive) return null;
+          if (!user || !user.isActive) {
+            console.warn(`Auth failed: User not found for input "${rawInput}"`);
+            return null;
+          }
 
-        const valid = await bcrypt.compare(
-          credentials.password as string,
-          user.password
-        );
-        if (!valid) return null;
+          const valid = await bcrypt.compare(
+            credentials.password as string,
+            user.password
+          );
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          rollNumber: user.rollNumber,
-          allocationScore: user.allocationScore,
-        };
+          if (!valid) {
+            console.warn(`Auth failed: Password invalid for user "${user.email}"`);
+            return null;
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            rollNumber: user.rollNumber,
+            allocationScore: user.allocationScore,
+          };
+        } catch (error) {
+          console.error("Authorize error during login:", error);
+          return null;
+        }
       },
     }),
   ],
