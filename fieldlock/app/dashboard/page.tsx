@@ -2,10 +2,9 @@ import { requireAuth } from "@/lib/auth-guards";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import prisma from "@/lib/db";
-import { formatDate, formatTime, getFacilityIcon, getStatusColor } from "@/lib/utils";
+import { formatDate, formatTime, getFacilityIcon } from "@/lib/utils";
 import {
-  Trophy, Calendar, Clock, AlertCircle,
-  ChevronRight, Star, TrendingUp
+  Trophy, Calendar, ChevronRight, Star, TrendingUp
 } from "lucide-react";
 
 export default async function DashboardPage() {
@@ -14,15 +13,22 @@ export default async function DashboardPage() {
 
   const userId = session.user.id;
 
-  // Fetch upcoming bookings
+  // Normalized start of today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Fetch upcoming & today's bookings
   const upcomingBookings = await prisma.booking.findMany({
     where: {
       userId,
       status: "CONFIRMED",
-      slotResource: { slotDate: { gte: new Date() } },
+      slotResource: { slotDate: { gte: today } },
     },
     include: { slotResource: { include: { facility: true } } },
-    orderBy: { slotResource: { slotDate: "asc" } },
+    orderBy: [
+      { slotResource: { slotDate: "asc" } },
+      { slotResource: { startTime: "asc" } },
+    ],
     take: 5,
   });
 
@@ -52,8 +58,8 @@ export default async function DashboardPage() {
 
   const score = user?.allocationScore ?? 70;
   const attendanceRate = user?.totalBookings
-    ? Math.round(((user.attendedCount ?? 0) / user.totalBookings) * 100)
-    : 0;
+    ? Math.min(100, Math.round(((user.attendedCount ?? 0) / user.totalBookings) * 100))
+    : 100;
 
   // Score color
   const scoreColor =
@@ -67,7 +73,7 @@ export default async function DashboardPage() {
     "stroke-red-400";
 
   const circumference = 2 * Math.PI * 40;
-  const dashOffset = circumference - (score / 100) * circumference;
+  const dashOffset = circumference - (Math.min(100, Math.max(0, score)) / 100) * circumference;
 
   return (
     <main className="min-h-screen bg-[#0a0a0f] text-white">
@@ -159,11 +165,11 @@ export default async function DashboardPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-xs px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                        <span className="text-xs px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium">
                           CONFIRMED
                         </span>
                         <Link
-                          href={`/my-bookings/${b.id}`}
+                          href="/my-bookings"
                           className="text-slate-500 hover:text-white transition-colors"
                         >
                           <ChevronRight className="w-4 h-4" />
@@ -302,7 +308,6 @@ export default async function DashboardPage() {
                   { label: "Browse Facilities", href: "/facilities", icon: "🏟️" },
                   { label: "My Bookings", href: "/my-bookings", icon: "📅" },
                   { label: "My Waitlist", href: "/waitlist", icon: "⏳" },
-                  { label: "My Profile", href: "/profile", icon: "👤" },
                 ].map((link) => (
                   <Link
                     key={link.href}

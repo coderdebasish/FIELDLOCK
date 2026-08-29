@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import {
   Trophy, Zap, Shield, BarChart3, ArrowRight,
@@ -7,7 +8,7 @@ import {
 } from "lucide-react";
 
 export default async function HomePage() {
-  const session = await auth();
+  const session = await getServerSession(authOptions);
   if (session?.user) {
     redirect(session.user.role === "ADMIN" ? "/admin" : "/dashboard");
   }

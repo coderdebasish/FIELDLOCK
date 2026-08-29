@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FIELDLOCK — Intelligent & Concurrency-Correct Sports Facility Allocation Platform
 
-## Getting Started
+> **IIT Guwahati Sports Board × Tech Board — PLAYHACK 2024 Submission**
 
-First, run the development server:
+FIELDLOCK is a production-grade sports facility management system engineered to eliminate double-bookings during peak hours using a **Dedicated Slot-Resource Row-Level Locking Model**, coupled with a **Fair Allocation Engine** and **Predictive Intelligence Layer**.
+
+---
+
+## 🚀 Live Demo & Judge Credentials
+
+* **Live App URL:** `https://fieldlock.vercel.app`
+* **Live Concurrency Demo Panel:** `https://fieldlock.vercel.app/admin/race-demo`
+
+### Test Accounts
+
+| Role | Email | Password | Details |
+| :--- | :--- | :--- | :--- |
+| 👑 **Admin** | `admin@iitg.ac.in` | `admin123` | Full control + Live Race Panel |
+| 🏆 **Student (High Priority)** | `220101001@iitg.ac.in` | `pass123` | Score: 92/100 (Reliable booker) |
+| 📈 **Student (Mid Priority)** | `220101003@iitg.ac.in` | `pass123` | Score: 78/100 |
+| ⚠️ **Student (Low Priority)** | `220101010@iitg.ac.in` | `pass123` | Score: 33/100 (No-show penalized) |
+
+---
+
+## 🛡️ Core Innovations & Technical Architecture
+
+### 1. Dedicated `SlotResource` Lock Model (Zero Race Conditions)
+Traditional booking platforms check slot availability and write bookings in two separate steps, creating race conditions under high concurrency.
+FIELDLOCK models every bookable slot as a dedicated database row (`SlotResource`). All booking transactions execute `SELECT ... FOR UPDATE` inside `SERIALIZABLE` PostgreSQL transactions:
+* **Outcome:** Exactly 1 winner per slot, 0 double-bookings, even under 50+ concurrent requests.
+
+### 2. Fair Allocation Engine (Transparent Ranking)
+Waitlists are dynamically ranked using weighted factors instead of raw speed:
+* **35%** Attendance Reliability
+* **20%** Usage Balance
+* **15%** Cancellation Quality (advance notice)
+* **15%** Waitlist Honor Rate
+* **10%** New User Boost
+
+### 3. Predictive Intelligence Layer
+Analyzes historical booking patterns to auto-generate operational recommendations for administrators (e.g., *"Demand predicted at 2.4× capacity for Badminton Court A at 18:00. Suggested action: Open alternate facility or extend waitlist capacity"*).
+
+---
+
+## 🛠️ Tech Stack
+
+* **Framework:** Next.js 14+ (App Router, Server Actions)
+* **Database:** PostgreSQL (Supabase Free Tier)
+* **ORM:** Prisma v6
+* **Auth:** NextAuth (JWT Session Strategy)
+* **Styling:** Tailwind CSS (Dark theme & Glassmorphism)
+
+---
+
+## ⚡ Local Setup
 
 ```bash
+# 1. Clone & Install
+git clone https://github.com/coderdebasish/FIELDLOCK.git
+cd FIELDLOCK
+npm install
+
+# 2. Configure Environment (.env)
+DATABASE_URL="your-supabase-postgresql-url"
+DIRECT_URL="your-supabase-postgresql-url"
+NEXTAUTH_SECRET="fieldlock-playhack-secret"
+NEXTAUTH_URL="http://localhost:3000"
+
+# 3. Setup DB & Seed
+npx prisma generate
+npx prisma db push
+node prisma/seed.js
+
+# 4. Run App
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
