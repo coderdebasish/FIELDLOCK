@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import prisma from "@/lib/db";
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET || "fieldlock-playhack-secret-key-2024",
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
@@ -12,14 +13,23 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: "credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
+        const input = (credentials.email as string).trim();
+
+        // Search by email, rollNumber, or email prefix
+        const user = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { email: input },
+              { rollNumber: input },
+              { email: `${input}@iitg.ac.in` },
+            ],
+          },
         });
 
         if (!user || !user.isActive) return null;
