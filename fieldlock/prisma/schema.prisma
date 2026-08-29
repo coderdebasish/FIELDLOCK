@@ -1,0 +1,274 @@
+// FIELDLOCK — Prisma Schema
+// SlotResource model ensures concurrency correctness:
+// Every bookable slot has a dedicated row that transactions compete to lock
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+enum SlotStatus {
+  AVAILABLE
+  BOOKED
+  BLOCKED // maintenance or closure
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+  RELEASED
+}
+
+enum WaitlistStatus {
+  WAITING
+  PROMOTED
+  EXPIRED
+  DECLINED
+}
+
+enum AllocationEventType {
+  ATTENDED
+  NO_SHOW
+  EARLY_CANCEL   // > 4hr notice
+  LATE_CANCEL    // < 1hr notice
+  WAITLIST_HONORED
+  NEW_USER_BONUS
+  ADMIN_ADJUSTMENT
+}
+
+// ─────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────
+
+model User {
+  id              String   @id @default(cuid())
+  rollNumber      String   @unique
+  name            String
+  email           String   @unique
+  password        String
+  role            Role     @default(STUDENT)
+  department      String?
+  year            Int?
+  phone           String?
+
+  // Fair Allocation Engine score (0-100)
+  allocationScore Float    @default(70)
+
+  // Computed stats (updated on each booking event)
+  totalBookings   Int      @default(0)
+  attendedCount   Int      @default(0)
+  noShowCount     Int      @default(0)
+
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bookings         Booking[]
+  waitlist         Waitlist[]
+  allocationEvents AllocationEvent[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────
+// FACILITIES
+// ─────────────────────────────────────────
+
+model Facility {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   // BADMINTON, TENNIS, FOOTBALL, GYM, CRICKET
+  capacity    Int      @default(1)
+  location    String
+  description String?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  openTime    String   @default("06:00") // "HH:MM"
+  closeTime   String   @default("22:00")
+  slotDuration Int     @default(60)      // minutes
+
+  slotResources    SlotResource[]
+  demandPredictions DemandPrediction[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("facilities")
+}
+
+// ─────────────────────────────────────────
+// SLOT RESOURCE — THE LOCK MODEL
+// Every bookable slot has exactly one row here.
+// This is what transactions compete to lock with SELECT FOR UPDATE.
+// ─────────────────────────────────────────
+
+model SlotResource {
+  id         String     @id @default(cuid())
+  facilityId String
+  slotDate   DateTime   // date only (time stored in startTime/endTime)
+  startTime  String     // "18:00"
+  endTime    String     // "19:00"
+  status     SlotStatus @default(AVAILABLE)
+
+  facility Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  booking  Booking?
+  waitlist Waitlist[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One resource per facility+date+time — DB enforced
+  @@unique([facilityId, slotDate, startTime])
+  @@index([facilityId, slotDate])
+  @@map("slot_resources")
+}
+
+// ─────────────────────────────────────────
+// BOOKINGS
+// ─────────────────────────────────────────
+
+model Booking {
+  id             String        @id @default(cuid())
+  slotResourceId String        @unique  // ONE booking per resource — DB enforced
+  userId         String
+  status         BookingStatus @default(CONFIRMED)
+  idempotencyKey String        @unique  // prevents duplicate processing
+
+  // Check-in
+  checkedIn   Boolean   @default(false)
+  checkedInAt DateTime?
+  qrToken     String?   @unique
+
+  // ML prediction (pre-computed)
+  noShowProb Float?
+
+  cancelledAt   DateTime?
+  cancelReason  String?
+
+  slotResource SlotResource @relation(fields: [slotResourceId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("bookings")
+}
+
+// ─────────────────────────────────────────
+// WAITLIST
+// ─────────────────────────────────────────
+
+model Waitlist {
+  id             String         @id @default(cuid())
+  slotResourceId String
+  userId         String
+  rankScore      Float          // Fair Allocation Engine score at join time
+  status         WaitlistStatus @default(WAITING)
+
+  notifiedAt       DateTime?
+  responseDeadline DateTime?    // 15-min window to accept
+  promotedAt       DateTime?
+
+  slotResource SlotResource @relation(fields: [slotResourceId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+
+  joinedAt DateTime @default(now())
+
+  @@unique([slotResourceId, userId])
+  @@index([slotResourceId, rankScore])
+  @@map("waitlist")
+}
+
+// ─────────────────────────────────────────
+// FAIR ALLOCATION ENGINE — AUDIT TRAIL
+// Every score change is recorded with a human-readable reason
+// ─────────────────────────────────────────
+
+model AllocationEvent {
+  id        String              @id @default(cuid())
+  userId    String
+  eventType AllocationEventType
+  delta     Float               // positive = good, negative = bad
+  reason    String              // plain-English explanation
+  bookingId String?
+
+  user      User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("allocation_events")
+}
+
+// ─────────────────────────────────────────
+// DEMAND PREDICTIONS (pre-computed by Python)
+// ─────────────────────────────────────────
+
+model DemandPrediction {
+  id              String   @id @default(cuid())
+  facilityId      String
+  predictedDate   DateTime
+  hour            Int      // 0-23
+  predictedDemand Float    // expected booking requests
+  capacityRatio   Float    // predictedDemand / facility.capacity
+  recommendation  String?  // auto-generated action text
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([facilityId, predictedDate, hour])
+  @@index([facilityId, predictedDate])
+  @@map("demand_predictions")
+}
+
+// ─────────────────────────────────────────
+// MAINTENANCE WINDOWS
+// ─────────────────────────────────────────
+
+model MaintenanceWindow {
+  id          String   @id @default(cuid())
+  facilityId  String
+  startAt     DateTime
+  endAt       DateTime
+  reason      String
+  createdById String?
+
+  createdAt DateTime @default(now())
+
+  @@map("maintenance_windows")
+}
+
+// ─────────────────────────────────────────
+// IDEMPOTENCY TABLE
+// Prevents duplicate booking processing on retries
+// ─────────────────────────────────────────
+
+model BookingRequest {
+  idempotencyKey  String   @id
+  userId          String
+  slotResourceId  String
+  resultStatus    String   // CONFIRMED | CONFLICT
+  resultBookingId String?
+  processedAt     DateTime @default(now())
+
+  @@map("booking_requests")
+}
